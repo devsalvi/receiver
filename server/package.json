@@ -1,0 +1,22 @@
+{
+  "name": "receiver-server",
+  "version": "1.0.0",
+  "description": "Voice AI appointment booking agent for barber shops",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "db:init": "node src/db/init.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "googleapis": "^144.0.0",
+    "node-cron": "^3.0.3",
+    "twilio": "^5.4.3",
+    "uuid": "^11.1.0"
+  }
+}
