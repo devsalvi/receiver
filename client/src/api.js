@@ -1,6 +1,6 @@
 import { getCurrentSession } from './auth';
 
-const BASE = '/api';
+const BASE = import.meta.env.VITE_API_URL || '/api';
 
 async function request(path, options = {}) {
   // Get fresh token for every request

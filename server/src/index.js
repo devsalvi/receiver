@@ -16,7 +16,14 @@ import { startReminderScheduler } from './services/reminders.js';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors({ origin: process.env.APP_URL || 'http://localhost:5173' }));
+app.use(cors({
+  origin: [
+    process.env.APP_URL || 'http://localhost:5173',
+    'http://localhost:5173',
+    'https://master.d1jxovvwswacpk.amplifyapp.com',
+  ],
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
