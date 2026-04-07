@@ -9,6 +9,7 @@ const router = Router();
 
 // List appointments with filters
 router.get('/', (req, res) => {
+  const storeId = req.storeId;
   const { status, from, to, barber_id, limit = 50, offset = 0 } = req.query;
   let query = `
     SELECT a.*, c.first_name as customer_name, c.phone as customer_phone,
@@ -18,9 +19,9 @@ router.get('/', (req, res) => {
     LEFT JOIN customers c ON a.customer_id = c.id
     LEFT JOIN services s ON a.service_id = s.id
     LEFT JOIN barbers b ON a.barber_id = b.id
-    WHERE 1=1
+    WHERE a.store_id = ?
   `;
-  const params = [];
+  const params = [storeId];
 
   if (status) { query += ' AND a.status = ?'; params.push(status); }
   if (from) { query += ' AND a.start_time >= ?'; params.push(from); }
@@ -31,7 +32,7 @@ router.get('/', (req, res) => {
   params.push(Number(limit), Number(offset));
 
   const appointments = db.prepare(query).all(...params);
-  const total = db.prepare('SELECT COUNT(*) as count FROM appointments').get().count;
+  const total = db.prepare('SELECT COUNT(*) as count FROM appointments WHERE store_id = ?').get(storeId).count;
   res.json({ appointments, total });
 });
 
@@ -45,8 +46,8 @@ router.get('/:id', (req, res) => {
     LEFT JOIN customers c ON a.customer_id = c.id
     LEFT JOIN services s ON a.service_id = s.id
     LEFT JOIN barbers b ON a.barber_id = b.id
-    WHERE a.id = ?
-  `).get(req.params.id);
+    WHERE a.id = ? AND a.store_id = ?
+  `).get(req.params.id, req.storeId);
 
   if (!apt) return res.status(404).json({ error: 'Appointment not found' });
   res.json(apt);
@@ -55,32 +56,37 @@ router.get('/:id', (req, res) => {
 // Create appointment
 router.post('/', async (req, res) => {
   try {
+    const storeId = req.storeId;
     const { customer_name, customer_phone, barber_id, service_id, start_time, notes } = req.body;
 
     if (!customer_name || !customer_phone || !start_time) {
       return res.status(400).json({ error: 'customer_name, customer_phone, and start_time are required' });
     }
 
-    // Find or create customer
-    let customer = db.prepare('SELECT * FROM customers WHERE phone = ?').get(customer_phone);
+    // Find or create customer scoped to store
+    let customer = db.prepare('SELECT * FROM customers WHERE phone = ? AND store_id = ?').get(customer_phone, storeId);
     if (!customer) {
       const customerId = uuid();
-      db.prepare('INSERT INTO customers (id, first_name, phone) VALUES (?, ?, ?)')
-        .run(customerId, customer_name, customer_phone);
+      db.prepare('INSERT INTO customers (id, store_id, first_name, phone) VALUES (?, ?, ?, ?)')
+        .run(customerId, storeId, customer_name, customer_phone);
       customer = { id: customerId, first_name: customer_name, phone: customer_phone };
     }
 
     // Get service for duration
-    const service = service_id ? db.prepare('SELECT * FROM services WHERE id = ?').get(service_id) : null;
+    const service = service_id ? db.prepare('SELECT * FROM services WHERE id = ? AND store_id = ?').get(service_id, storeId) : null;
     const durationMinutes = service ? service.duration_minutes : 30;
     const endTime = new Date(new Date(start_time).getTime() + durationMinutes * 60000).toISOString();
+
+    // Resolve barber ID — use store's default if not specified
+    const defaultBarber = db.prepare("SELECT id FROM barbers WHERE store_id = ? AND name = 'Any Available'").get(storeId);
+    const resolvedBarberId = barber_id || defaultBarber?.id || 'barber_default';
 
     // Check for conflicts
     const conflict = db.prepare(`
       SELECT id FROM appointments
-      WHERE barber_id = ? AND status = 'confirmed'
+      WHERE store_id = ? AND barber_id = ? AND status = 'confirmed'
       AND start_time < ? AND end_time > ?
-    `).get(barber_id || 'barber_default', endTime, start_time);
+    `).get(storeId, resolvedBarberId, endTime, start_time);
 
     if (conflict) {
       return res.status(409).json({ error: 'Time slot is not available' });
@@ -88,9 +94,9 @@ router.post('/', async (req, res) => {
 
     const appointmentId = uuid();
     db.prepare(`
-      INSERT INTO appointments (id, customer_id, barber_id, service_id, start_time, end_time, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(appointmentId, customer.id, barber_id || 'barber_default', service_id, start_time, endTime, notes);
+      INSERT INTO appointments (id, store_id, customer_id, barber_id, service_id, start_time, end_time, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(appointmentId, storeId, customer.id, resolvedBarberId, service_id, start_time, endTime, notes);
 
     // Sync to Google Calendar
     try {
@@ -108,13 +114,14 @@ router.post('/', async (req, res) => {
     }
 
     // Send SMS confirmation
+    const store = db.prepare('SELECT name FROM stores WHERE id = ?').get(storeId);
     try {
       await sendConfirmationSMS(customer_phone, {
         customerName: customer_name,
         serviceName: service ? service.name : 'Appointment',
         startTime: start_time,
-        businessName: db.prepare('SELECT name FROM business WHERE id = 1').get()?.name
-      });
+        businessName: store?.name
+      }, storeId);
     } catch (err) {
       console.error('SMS confirmation failed:', err.message);
     }
@@ -142,7 +149,7 @@ router.post('/', async (req, res) => {
 // Update appointment status
 router.patch('/:id', async (req, res) => {
   const { status, start_time, notes } = req.body;
-  const apt = db.prepare('SELECT * FROM appointments WHERE id = ?').get(req.params.id);
+  const apt = db.prepare('SELECT * FROM appointments WHERE id = ? AND store_id = ?').get(req.params.id, req.storeId);
   if (!apt) return res.status(404).json({ error: 'Appointment not found' });
 
   const updates = [];
@@ -156,7 +163,6 @@ router.patch('/:id', async (req, res) => {
   params.push(req.params.id);
   db.prepare(`UPDATE appointments SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
-  // If cancelled, remove from Google Calendar
   if (status === 'cancelled' && apt.google_event_id) {
     try { await deleteGoogleCalendarEvent(apt.google_event_id); } catch (err) {
       console.error('Failed to delete calendar event:', err.message);
@@ -169,29 +175,27 @@ router.patch('/:id', async (req, res) => {
 
 // Get availability for a date
 router.get('/availability/:date', (req, res) => {
+  const storeId = req.storeId;
   const { date } = req.params;
   const { barber_id } = req.query;
   const dayOfWeek = new Date(date).getDay();
 
-  // Get business hours for this day
-  const hours = db.prepare('SELECT * FROM business_hours WHERE day_of_week = ?').get(dayOfWeek);
+  const hours = db.prepare('SELECT * FROM business_hours WHERE day_of_week = ? AND store_id = ? AND barber_id IS NULL').get(dayOfWeek, storeId);
   if (!hours || hours.is_closed) {
     return res.json({ available: false, slots: [], message: 'Closed on this day' });
   }
 
-  // Get existing appointments for this date
   const dateStart = `${date}T00:00:00`;
   const dateEnd = `${date}T23:59:59`;
   let aptQuery = `
     SELECT start_time, end_time FROM appointments
-    WHERE status = 'confirmed' AND start_time >= ? AND start_time <= ?
+    WHERE store_id = ? AND status = 'confirmed' AND start_time >= ? AND start_time <= ?
   `;
-  const aptParams = [dateStart, dateEnd];
+  const aptParams = [storeId, dateStart, dateEnd];
   if (barber_id) { aptQuery += ' AND barber_id = ?'; aptParams.push(barber_id); }
 
   const booked = db.prepare(aptQuery).all(...aptParams);
 
-  // Generate 30-minute slots
   const slots = [];
   const [openH, openM] = hours.open_time.split(':').map(Number);
   const [closeH, closeM] = hours.close_time.split(':').map(Number);

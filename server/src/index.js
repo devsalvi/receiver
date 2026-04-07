@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import db from './db/index.js';
+import { requireAuth } from './middleware/auth.js';
 import appointmentsRouter from './routes/appointments.js';
 import servicesRouter from './routes/services.js';
 import barbersRouter from './routes/barbers.js';
@@ -18,19 +19,19 @@ app.use(cors({ origin: process.env.APP_URL || 'http://localhost:5173' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// API routes
-app.use('/api/appointments', appointmentsRouter);
-app.use('/api/services', servicesRouter);
-app.use('/api/barbers', barbersRouter);
-app.use('/api/business', businessRouter);
-app.use('/api/calls', callsRouter);
+// Public routes (no auth required)
 app.use('/api/vapi', vapiRouter);
 app.use('/api/auth', authRouter);
-
-// Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Protected routes (require Cognito JWT)
+app.use('/api/appointments', requireAuth, appointmentsRouter);
+app.use('/api/services', requireAuth, servicesRouter);
+app.use('/api/barbers', requireAuth, barbersRouter);
+app.use('/api/business', requireAuth, businessRouter);
+app.use('/api/calls', requireAuth, callsRouter);
 
 // Start reminder scheduler
 startReminderScheduler();

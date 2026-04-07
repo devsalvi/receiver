@@ -1,10 +1,28 @@
+import { getCurrentSession } from './auth';
+
 const BASE = '/api';
 
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-    ...options,
-  });
+  // Get fresh token for every request
+  let token = null;
+  try {
+    const session = await getCurrentSession();
+    token = session.idToken;
+  } catch {
+    // No session — request will 401 if route is protected
+  }
+
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+
+  if (res.status === 401) {
+    // Token expired or invalid — redirect to login
+    window.location.href = '/login';
+    throw new Error('Unauthorized');
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || 'Request failed');

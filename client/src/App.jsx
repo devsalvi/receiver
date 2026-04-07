@@ -1,5 +1,7 @@
-import { Routes, Route, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Calendar, Phone, Scissors, Clock, Settings } from 'lucide-react'
+import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { LayoutDashboard, Calendar, Phone, Scissors, Clock, Settings, LogOut } from 'lucide-react'
+import { AuthProvider, useAuth } from './AuthContext'
+import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Appointments from './pages/Appointments'
 import CallLog from './pages/CallLog'
@@ -16,7 +18,16 @@ const navItems = [
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
-function App() {
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="flex items-center justify-center h-screen text-gray-400">Loading...</div>
+  if (!user) return <Navigate to="/login" replace />
+  return children
+}
+
+function AppShell() {
+  const { user, logout } = useAuth()
+
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar */}
@@ -26,7 +37,7 @@ function App() {
             <Phone className="w-6 h-6 text-emerald-400" />
             Receiver
           </h1>
-          <p className="text-xs text-gray-400 mt-1">AI Voice Booking Agent</p>
+          <p className="text-xs text-gray-400 mt-1 truncate">{user?.storeName || 'AI Voice Booking'}</p>
         </div>
         <nav className="flex-1 px-3">
           {navItems.map(({ to, icon: Icon, label }) => (
@@ -48,9 +59,17 @@ function App() {
           ))}
         </nav>
         <div className="p-4 border-t border-gray-800">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-            <span className="text-xs text-gray-400">Agent Active</span>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+              <span className="text-xs text-gray-400">Agent Active</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500 truncate max-w-[140px]">{user?.email}</span>
+            <button onClick={logout} className="text-gray-500 hover:text-white transition-colors" title="Sign out">
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </aside>
@@ -67,6 +86,21 @@ function App() {
         </Routes>
       </main>
     </div>
+  )
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/*" element={
+          <ProtectedRoute>
+            <AppShell />
+          </ProtectedRoute>
+        } />
+      </Routes>
+    </AuthProvider>
   )
 }
 

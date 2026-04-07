@@ -21,27 +21,27 @@ function formatDateTime(isoString) {
   });
 }
 
-export async function sendConfirmationSMS(phone, { customerName, serviceName, startTime, businessName }) {
+export async function sendConfirmationSMS(phone, { customerName, serviceName, startTime, businessName }, storeId) {
   const body = `Hi ${customerName}! Your ${serviceName} at ${businessName || 'the shop'} is confirmed for ${formatDateTime(startTime)}. Reply CANCEL to cancel.`;
-  return sendSMS(phone, body, 'confirmation');
+  return sendSMS(phone, body, 'confirmation', null, storeId);
 }
 
-export async function sendReminderSMS(phone, { customerName, serviceName, startTime, businessName, reminderType }) {
+export async function sendReminderSMS(phone, { customerName, serviceName, startTime, businessName, reminderType }, storeId) {
   const timeLabel = reminderType === 'reminder_24h' ? 'tomorrow' : 'in 2 hours';
   const body = `Hi ${customerName}! Reminder: your ${serviceName} at ${businessName || 'the shop'} is ${timeLabel} at ${formatDateTime(startTime)}. See you soon!`;
-  return sendSMS(phone, body, reminderType);
+  return sendSMS(phone, body, reminderType, null, storeId);
 }
 
-async function sendSMS(to, body, messageType, appointmentId) {
+async function sendSMS(to, body, messageType, appointmentId, storeId) {
   const client = getClient();
   const logId = uuid();
 
   if (!client) {
     console.log(`[SMS-MOCK] To: ${to} | ${body}`);
     db.prepare(`
-      INSERT INTO sms_logs (id, appointment_id, customer_phone, message_type, message_body, status)
-      VALUES (?, ?, ?, ?, ?, 'sent')
-    `).run(logId, appointmentId || null, to, messageType, body);
+      INSERT INTO sms_logs (id, store_id, appointment_id, customer_phone, message_type, message_body, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'sent')
+    `).run(logId, storeId || 'unknown', appointmentId || null, to, messageType, body);
     return logId;
   }
 
@@ -53,17 +53,17 @@ async function sendSMS(to, body, messageType, appointmentId) {
     });
 
     db.prepare(`
-      INSERT INTO sms_logs (id, appointment_id, customer_phone, message_type, message_body, twilio_sid, status)
-      VALUES (?, ?, ?, ?, ?, ?, 'sent')
-    `).run(logId, appointmentId || null, to, messageType, body, message.sid);
+      INSERT INTO sms_logs (id, store_id, appointment_id, customer_phone, message_type, message_body, twilio_sid, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'sent')
+    `).run(logId, storeId || 'unknown', appointmentId || null, to, messageType, body, message.sid);
 
     return logId;
   } catch (err) {
     console.error('SMS send error:', err.message);
     db.prepare(`
-      INSERT INTO sms_logs (id, appointment_id, customer_phone, message_type, message_body, status)
-      VALUES (?, ?, ?, ?, ?, 'failed')
-    `).run(logId, appointmentId || null, to, messageType, body);
+      INSERT INTO sms_logs (id, store_id, appointment_id, customer_phone, message_type, message_body, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'failed')
+    `).run(logId, storeId || 'unknown', appointmentId || null, to, messageType, body);
     throw err;
   }
 }

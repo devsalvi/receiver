@@ -1,7 +1,8 @@
--- Business settings
-CREATE TABLE IF NOT EXISTS business (
-  id INTEGER PRIMARY KEY DEFAULT 1,
+-- Stores (tenants)
+CREATE TABLE IF NOT EXISTS stores (
+  id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT 'My Barber Shop',
+  owner_email TEXT NOT NULL,
   phone TEXT,
   address TEXT,
   timezone TEXT NOT NULL DEFAULT 'America/New_York',
@@ -13,45 +14,55 @@ CREATE TABLE IF NOT EXISTS business (
 -- Barbers / staff
 CREATE TABLE IF NOT EXISTS barbers (
   id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL,
   name TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1,
   google_calendar_id TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (store_id) REFERENCES stores(id)
 );
 
 -- Services offered
 CREATE TABLE IF NOT EXISTS services (
   id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL,
   name TEXT NOT NULL,
   duration_minutes INTEGER NOT NULL DEFAULT 30,
   price_cents INTEGER,
   active INTEGER NOT NULL DEFAULT 1,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (store_id) REFERENCES stores(id)
 );
 
 -- Business hours
 CREATE TABLE IF NOT EXISTS business_hours (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
   day_of_week INTEGER NOT NULL, -- 0=Sunday, 6=Saturday
   open_time TEXT NOT NULL,      -- HH:MM format
   close_time TEXT NOT NULL,     -- HH:MM format
   is_closed INTEGER NOT NULL DEFAULT 0,
   barber_id TEXT,               -- NULL means applies to all
+  FOREIGN KEY (store_id) REFERENCES stores(id),
   FOREIGN KEY (barber_id) REFERENCES barbers(id)
 );
 
 -- Customers
 CREATE TABLE IF NOT EXISTS customers (
   id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL,
   first_name TEXT NOT NULL,
-  phone TEXT NOT NULL UNIQUE,
+  phone TEXT NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(store_id, phone),
+  FOREIGN KEY (store_id) REFERENCES stores(id)
 );
 
 -- Appointments
 CREATE TABLE IF NOT EXISTS appointments (
   id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL,
   customer_id TEXT NOT NULL,
   barber_id TEXT,
   service_id TEXT,
@@ -62,6 +73,7 @@ CREATE TABLE IF NOT EXISTS appointments (
   notes TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (store_id) REFERENCES stores(id),
   FOREIGN KEY (customer_id) REFERENCES customers(id),
   FOREIGN KEY (barber_id) REFERENCES barbers(id),
   FOREIGN KEY (service_id) REFERENCES services(id)
@@ -70,6 +82,7 @@ CREATE TABLE IF NOT EXISTS appointments (
 -- Call logs
 CREATE TABLE IF NOT EXISTS calls (
   id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL,
   vapi_call_id TEXT UNIQUE,
   customer_phone TEXT,
   customer_id TEXT,
@@ -82,6 +95,7 @@ CREATE TABLE IF NOT EXISTS calls (
   summary TEXT,
   started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   ended_at DATETIME,
+  FOREIGN KEY (store_id) REFERENCES stores(id),
   FOREIGN KEY (customer_id) REFERENCES customers(id),
   FOREIGN KEY (appointment_id) REFERENCES appointments(id)
 );
@@ -89,6 +103,7 @@ CREATE TABLE IF NOT EXISTS calls (
 -- SMS logs
 CREATE TABLE IF NOT EXISTS sms_logs (
   id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL,
   appointment_id TEXT,
   customer_phone TEXT NOT NULL,
   message_type TEXT NOT NULL, -- confirmation, reminder_24h, reminder_2h, custom
@@ -96,6 +111,7 @@ CREATE TABLE IF NOT EXISTS sms_logs (
   twilio_sid TEXT,
   status TEXT NOT NULL DEFAULT 'queued', -- queued, sent, delivered, failed
   sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (store_id) REFERENCES stores(id),
   FOREIGN KEY (appointment_id) REFERENCES appointments(id)
 );
 
@@ -109,25 +125,10 @@ CREATE TABLE IF NOT EXISTS reminders (
   FOREIGN KEY (appointment_id) REFERENCES appointments(id)
 );
 
--- Seed default business
-INSERT OR IGNORE INTO business (id, name) VALUES (1, 'My Barber Shop');
-
--- Seed default business hours (Mon-Sat 9-7, Sun closed)
-INSERT OR IGNORE INTO business_hours (day_of_week, open_time, close_time, is_closed) VALUES
-  (0, '09:00', '17:00', 1),  -- Sunday closed
-  (1, '09:00', '19:00', 0),  -- Monday
-  (2, '09:00', '19:00', 0),  -- Tuesday
-  (3, '09:00', '19:00', 0),  -- Wednesday
-  (4, '09:00', '19:00', 0),  -- Thursday
-  (5, '09:00', '19:00', 0),  -- Friday
-  (6, '09:00', '17:00', 0);  -- Saturday
-
--- Seed default services
-INSERT OR IGNORE INTO services (id, name, duration_minutes, price_cents) VALUES
-  ('svc_haircut', 'Haircut', 30, 3000),
-  ('svc_beard', 'Beard Trim', 15, 1500),
-  ('svc_combo', 'Haircut + Beard', 45, 4000),
-  ('svc_shave', 'Hot Shave', 30, 2500);
-
--- Seed default barber
-INSERT OR IGNORE INTO barbers (id, name) VALUES ('barber_default', 'Any Available');
+CREATE INDEX IF NOT EXISTS idx_barbers_store ON barbers(store_id);
+CREATE INDEX IF NOT EXISTS idx_services_store ON services(store_id);
+CREATE INDEX IF NOT EXISTS idx_business_hours_store ON business_hours(store_id);
+CREATE INDEX IF NOT EXISTS idx_customers_store ON customers(store_id);
+CREATE INDEX IF NOT EXISTS idx_appointments_store ON appointments(store_id);
+CREATE INDEX IF NOT EXISTS idx_calls_store ON calls(store_id);
+CREATE INDEX IF NOT EXISTS idx_sms_logs_store ON sms_logs(store_id);

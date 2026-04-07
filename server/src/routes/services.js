@@ -5,7 +5,7 @@ import { v4 as uuid } from 'uuid';
 const router = Router();
 
 router.get('/', (req, res) => {
-  const services = db.prepare('SELECT * FROM services WHERE active = 1 ORDER BY name').all();
+  const services = db.prepare('SELECT * FROM services WHERE active = 1 AND store_id = ? ORDER BY name').all(req.storeId);
   res.json(services);
 });
 
@@ -14,14 +14,14 @@ router.post('/', (req, res) => {
   if (!name) return res.status(400).json({ error: 'name is required' });
 
   const id = `svc_${uuid().slice(0, 8)}`;
-  db.prepare('INSERT INTO services (id, name, duration_minutes, price_cents) VALUES (?, ?, ?, ?)')
-    .run(id, name, duration_minutes || 30, price_cents || 0);
+  db.prepare('INSERT INTO services (id, store_id, name, duration_minutes, price_cents) VALUES (?, ?, ?, ?, ?)')
+    .run(id, req.storeId, name, duration_minutes || 30, price_cents || 0);
   res.status(201).json(db.prepare('SELECT * FROM services WHERE id = ?').get(id));
 });
 
 router.patch('/:id', (req, res) => {
   const { name, duration_minutes, price_cents, active } = req.body;
-  const service = db.prepare('SELECT * FROM services WHERE id = ?').get(req.params.id);
+  const service = db.prepare('SELECT * FROM services WHERE id = ? AND store_id = ?').get(req.params.id, req.storeId);
   if (!service) return res.status(404).json({ error: 'Service not found' });
 
   const updates = [];
@@ -38,7 +38,7 @@ router.patch('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  db.prepare('UPDATE services SET active = 0 WHERE id = ?').run(req.params.id);
+  db.prepare('UPDATE services SET active = 0 WHERE id = ? AND store_id = ?').run(req.params.id, req.storeId);
   res.json({ success: true });
 });
 
