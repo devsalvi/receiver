@@ -2,7 +2,6 @@ import {
   CognitoUserPool,
   CognitoUser,
   AuthenticationDetails,
-  CognitoUserAttribute,
 } from 'amazon-cognito-identity-js';
 
 const POOL_ID = import.meta.env.VITE_COGNITO_POOL_ID || 'us-east-1_AntyLz5r2';
@@ -13,35 +12,7 @@ const userPool = new CognitoUserPool({
   ClientId: CLIENT_ID,
 });
 
-// Sign up a new store owner
-export function signUp(email, password, storeName) {
-  return new Promise((resolve, reject) => {
-    const storeId = `store_${crypto.randomUUID().slice(0, 12)}`;
-    const attributes = [
-      new CognitoUserAttribute({ Name: 'email', Value: email }),
-      new CognitoUserAttribute({ Name: 'custom:store_id', Value: storeId }),
-      new CognitoUserAttribute({ Name: 'custom:store_name', Value: storeName }),
-    ];
-
-    userPool.signUp(email, password, attributes, null, (err, result) => {
-      if (err) return reject(err);
-      resolve({ user: result.user, storeId });
-    });
-  });
-}
-
-// Confirm sign up with verification code
-export function confirmSignUp(email, code) {
-  return new Promise((resolve, reject) => {
-    const cognitoUser = new CognitoUser({ Username: email, Pool: userPool });
-    cognitoUser.confirmRegistration(code, true, (err, result) => {
-      if (err) return reject(err);
-      resolve(result);
-    });
-  });
-}
-
-// Sign in
+// Sign in — handles normal login and forced password change
 export function signIn(email, password) {
   return new Promise((resolve, reject) => {
     const cognitoUser = new CognitoUser({ Username: email, Pool: userPool });
@@ -49,22 +20,40 @@ export function signIn(email, password) {
 
     cognitoUser.authenticateUser(authDetails, {
       onSuccess: (session) => {
-        resolve({
-          idToken: session.getIdToken().getJwtToken(),
-          accessToken: session.getAccessToken().getJwtToken(),
-          refreshToken: session.getRefreshToken().getToken(),
-          storeId: session.getIdToken().payload['custom:store_id'],
-          storeName: session.getIdToken().payload['custom:store_name'],
-          email: session.getIdToken().payload.email,
-        });
+        resolve(extractSession(session));
       },
       onFailure: (err) => reject(err),
       newPasswordRequired: (userAttributes) => {
-        // For admin-created users that need to set a new password
         reject({ code: 'NewPasswordRequired', userAttributes, cognitoUser });
       },
     });
   });
+}
+
+// Complete new password challenge (first login for admin-created users)
+export function completeNewPassword(cognitoUser, newPassword) {
+  return new Promise((resolve, reject) => {
+    cognitoUser.completeNewPasswordChallenge(newPassword, {}, {
+      onSuccess: (session) => {
+        resolve(extractSession(session));
+      },
+      onFailure: (err) => reject(err),
+    });
+  });
+}
+
+function extractSession(session) {
+  const payload = session.getIdToken().payload;
+  const groups = payload['cognito:groups'] || [];
+  return {
+    idToken: session.getIdToken().getJwtToken(),
+    accessToken: session.getAccessToken().getJwtToken(),
+    refreshToken: session.getRefreshToken().getToken(),
+    storeId: payload['custom:store_id'],
+    storeName: payload['custom:store_name'],
+    email: payload.email,
+    isSuperAdmin: groups.includes('super_admin'),
+  };
 }
 
 // Sign out
@@ -81,24 +70,7 @@ export function getCurrentSession() {
 
     user.getSession((err, session) => {
       if (err || !session.isValid()) return reject(err || new Error('Invalid session'));
-      resolve({
-        idToken: session.getIdToken().getJwtToken(),
-        accessToken: session.getAccessToken().getJwtToken(),
-        storeId: session.getIdToken().payload['custom:store_id'],
-        storeName: session.getIdToken().payload['custom:store_name'],
-        email: session.getIdToken().payload.email,
-      });
-    });
-  });
-}
-
-// Resend confirmation code
-export function resendConfirmation(email) {
-  return new Promise((resolve, reject) => {
-    const cognitoUser = new CognitoUser({ Username: email, Pool: userPool });
-    cognitoUser.resendConfirmationCode((err, result) => {
-      if (err) return reject(err);
-      resolve(result);
+      resolve(extractSession(session));
     });
   });
 }

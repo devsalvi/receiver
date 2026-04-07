@@ -72,4 +72,13 @@ export const api = {
 
   // Auth
   getGoogleStatus: () => request('/auth/google/status'),
+
+  // Admin
+  admin: {
+    getStats: () => request('/admin/stats'),
+    getStores: () => request('/admin/stores'),
+    getStore: (id) => request(`/admin/stores/${id}`),
+    createStore: (data) => request('/admin/stores', { method: 'POST', body: JSON.stringify(data) }),
+    deleteStore: (id) => request(`/admin/stores/${id}`, { method: 'DELETE' }),
+  },
 };

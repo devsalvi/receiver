@@ -16,35 +16,65 @@ function getKey(header, callback) {
   });
 }
 
-// Verify Cognito JWT and extract store_id
-export function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing or invalid authorization header' });
-  }
-
-  const token = authHeader.slice(7);
-
-  jwt.verify(token, getKey, { issuer: COGNITO_ISSUER }, (err, decoded) => {
-    if (err) {
-      console.error('JWT verification failed:', err.message);
-      return res.status(401).json({ error: 'Invalid or expired token' });
+// Base JWT verification — sets req.userEmail, req.groups
+function verifyToken(req, res) {
+  return new Promise((resolve, reject) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Missing or invalid authorization header' });
+      return reject();
     }
 
-    const storeId = decoded['custom:store_id'];
-    const storeName = decoded['custom:store_name'] || 'My Barber Shop';
-    const email = decoded.email;
+    const token = authHeader.slice(7);
 
-    if (!storeId) {
-      return res.status(403).json({ error: 'No store associated with this account' });
-    }
+    jwt.verify(token, getKey, { issuer: COGNITO_ISSUER }, (err, decoded) => {
+      if (err) {
+        console.error('JWT verification failed:', err.message);
+        res.status(401).json({ error: 'Invalid or expired token' });
+        return reject();
+      }
 
-    // Auto-provision store on first login
-    provisionStore(storeId, storeName, email);
-
-    req.storeId = storeId;
-    req.userEmail = email;
-    req.storeName = storeName;
-    next();
+      req.userEmail = decoded.email;
+      req.groups = decoded['cognito:groups'] || [];
+      req.decoded = decoded;
+      resolve(decoded);
+    });
   });
+}
+
+// Require authenticated store admin — extracts store_id and auto-provisions
+export function requireAuth(req, res, next) {
+  verifyToken(req, res)
+    .then((decoded) => {
+      const storeId = decoded['custom:store_id'];
+      const storeName = decoded['custom:store_name'] || 'My Barber Shop';
+
+      if (!storeId) {
+        // Super admins don't have a store_id — block them from store routes
+        if (req.groups.includes('super_admin')) {
+          return res.status(403).json({ error: 'Super admins must use admin endpoints' });
+        }
+        return res.status(403).json({ error: 'No store associated with this account' });
+      }
+
+      // Auto-provision store on first login
+      provisionStore(storeId, storeName, decoded.email);
+
+      req.storeId = storeId;
+      req.storeName = storeName;
+      next();
+    })
+    .catch(() => {});
+}
+
+// Require super admin — checks for super_admin group
+export function requireSuperAdmin(req, res, next) {
+  verifyToken(req, res)
+    .then(() => {
+      if (!req.groups.includes('super_admin')) {
+        return res.status(403).json({ error: 'Super admin access required' });
+      }
+      next();
+    })
+    .catch(() => {});
 }

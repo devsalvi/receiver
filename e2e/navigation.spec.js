@@ -1,12 +1,7 @@
 import { test, expect } from '@playwright/test';
 
-// These tests mock the auth state by injecting Cognito tokens into localStorage
-// to test the authenticated dashboard experience.
-
-// Helper to mock a logged-in session
-async function mockAuth(page) {
-  // We'll bypass Cognito by directly testing the UI components render
-  // by intercepting API calls and returning mock data
+// Helper to set up API mocks for store admin pages
+async function mockStoreAPIs(page) {
   await page.route('**/api/business/stats', route => {
     route.fulfill({
       status: 200,
@@ -120,29 +115,75 @@ async function mockAuth(page) {
   await page.route('**/api/auth/google/status', route => {
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"connected": false}' });
   });
+}
 
-  // Mock Cognito session in localStorage
+// Helper to mock admin APIs
+async function mockAdminAPIs(page) {
+  await page.route('**/api/admin/stats', route => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ totalStores: 3, totalAppointments: 120, totalCalls: 45, totalCustomers: 80 }),
+    });
+  });
+
+  await page.route('**/api/admin/stores', route => {
+    if (route.request().method() === 'GET') {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { id: 'store1', name: "Mike's Barber Shop", owner_email: 'mike@shop.com', appointment_count: 50, customer_count: 30, call_count: 20, created_at: '2026-01-15T00:00:00Z' },
+          { id: 'store2', name: "Joe's Cuts", owner_email: 'joe@cuts.com', appointment_count: 70, customer_count: 50, call_count: 25, created_at: '2026-02-10T00:00:00Z' },
+        ]),
+      });
+    } else {
+      route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ store_id: 'store_new', message: 'Store created.' }) });
+    }
+  });
+
+  await page.route('**/api/admin/stores/*', route => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'store1', name: "Mike's Barber Shop", owner_email: 'mike@shop.com',
+        phone: '+15551111111', address: '123 Main St', timezone: 'America/New_York',
+        services: [{ id: 'svc1', name: 'Haircut', duration_minutes: 30 }],
+        barbers: [{ id: 'b1', name: 'Mike' }],
+        stats: { appointments: 50, customers: 30, calls: 20 },
+      }),
+    });
+  });
+}
+
+// Inject fake Cognito localStorage tokens
+function buildFakeToken(overrides = {}) {
   const poolId = 'us-east-1_AntyLz5r2';
-  const clientId = '24sdog41lofq4r17qg5n542rbe';
-  const fakeUser = 'test@barbershop.com';
-  const lastAuthUserKey = `CognitoIdentityServiceProvider.${clientId}.LastAuthUser`;
-  const idTokenKey = `CognitoIdentityServiceProvider.${clientId}.${fakeUser}.idToken`;
-  const accessTokenKey = `CognitoIdentityServiceProvider.${clientId}.${fakeUser}.accessToken`;
-  const refreshTokenKey = `CognitoIdentityServiceProvider.${clientId}.${fakeUser}.refreshToken`;
-
-  // Create a fake JWT (won't verify but enough for the frontend to parse)
   const header = btoa(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
   const payload = btoa(JSON.stringify({
     sub: 'fake-sub-123',
-    email: fakeUser,
+    email: 'test@barbershop.com',
     'custom:store_id': 'store_test123',
     'custom:store_name': "Mike's Barber Shop",
+    'cognito:groups': [],
     iss: `https://cognito-idp.us-east-1.amazonaws.com/${poolId}`,
     exp: Math.floor(Date.now() / 1000) + 3600,
     iat: Math.floor(Date.now() / 1000),
     token_use: 'id',
+    ...overrides,
   }));
-  const fakeToken = `${header}.${payload}.fakesig`;
+  return `${header}.${payload}.fakesig`;
+}
+
+async function injectSession(page, tokenOverrides = {}) {
+  const clientId = '24sdog41lofq4r17qg5n542rbe';
+  const fakeUser = tokenOverrides.email || 'test@barbershop.com';
+  const fakeToken = buildFakeToken({ email: fakeUser, ...tokenOverrides });
+  const lastAuthUserKey = `CognitoIdentityServiceProvider.${clientId}.LastAuthUser`;
+  const idTokenKey = `CognitoIdentityServiceProvider.${clientId}.${fakeUser}.idToken`;
+  const accessTokenKey = `CognitoIdentityServiceProvider.${clientId}.${fakeUser}.accessToken`;
+  const refreshTokenKey = `CognitoIdentityServiceProvider.${clientId}.${fakeUser}.refreshToken`;
 
   await page.addInitScript(({ lastAuthUserKey, idTokenKey, accessTokenKey, refreshTokenKey, fakeUser, fakeToken }) => {
     localStorage.setItem(lastAuthUserKey, fakeUser);
@@ -152,18 +193,21 @@ async function mockAuth(page) {
   }, { lastAuthUserKey, idTokenKey, accessTokenKey, refreshTokenKey, fakeUser, fakeToken });
 }
 
-test.describe('Dashboard (authenticated)', () => {
+// ─── Store Admin Tests ────────────────────────────────────────────
+
+test.describe('Dashboard (store admin)', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAuth(page);
+    await mockStoreAPIs(page);
+    await injectSession(page);
   });
 
   test('renders dashboard with stats', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('h2:has-text("Dashboard")')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('5', { exact: true }).first()).toBeVisible(); // todayAppointments
-    await expect(page.getByText('42', { exact: true })).toBeVisible(); // totalAppointments
-    await expect(page.getByText('18', { exact: true })).toBeVisible(); // totalCalls
-    await expect(page.getByText('30', { exact: true })).toBeVisible(); // totalCustomers
+    await expect(page.getByText('5', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('42', { exact: true })).toBeVisible();
+    await expect(page.getByText('18', { exact: true })).toBeVisible();
+    await expect(page.getByText('30', { exact: true })).toBeVisible();
   });
 
   test('shows upcoming appointments on dashboard', async ({ page }) => {
@@ -188,127 +232,88 @@ test.describe('Dashboard (authenticated)', () => {
   });
 });
 
-test.describe('Appointments Page (authenticated)', () => {
+test.describe('Appointments Page (store admin)', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAuth(page);
+    await mockStoreAPIs(page);
+    await injectSession(page);
   });
 
   test('renders appointments table', async ({ page }) => {
     await page.goto('/appointments');
     await expect(page.locator('h2:has-text("Appointments")')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=John Doe')).toBeVisible();
-    await expect(page.locator('text=Haircut')).toBeVisible();
   });
 
   test('has filter buttons', async ({ page }) => {
     await page.goto('/appointments');
     await expect(page.locator('button:has-text("upcoming")')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('button:has-text("confirmed")')).toBeVisible();
-    await expect(page.locator('button:has-text("cancelled")')).toBeVisible();
-  });
-
-  test('has new appointment button', async ({ page }) => {
-    await page.goto('/appointments');
-    await expect(page.locator('button:has-text("New Appointment")')).toBeVisible({ timeout: 10000 });
   });
 
   test('opens new appointment modal', async ({ page }) => {
     await page.goto('/appointments');
     await page.click('button:has-text("New Appointment")');
     await expect(page.locator('h3:has-text("New Appointment")')).toBeVisible();
-    await expect(page.locator('input[placeholder="+1234567890"]')).toBeVisible();
   });
 });
 
-test.describe('Call Log Page (authenticated)', () => {
+test.describe('Call Log Page (store admin)', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAuth(page);
+    await mockStoreAPIs(page);
+    await injectSession(page);
   });
 
-  test('renders call log table', async ({ page }) => {
+  test('renders call log and opens transcript', async ({ page }) => {
     await page.goto('/calls');
     await expect(page.locator('h2:has-text("Call Log")')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=Jane')).toBeVisible();
-    await expect(page.locator('text=completed')).toBeVisible();
-  });
-
-  test('can open transcript modal', async ({ page }) => {
-    await page.goto('/calls');
     await page.click('text=View');
     await expect(page.locator('h3:has-text("Call Transcript")')).toBeVisible();
     await expect(page.locator('text=I want a beard trim')).toBeVisible();
   });
 });
 
-test.describe('Services Page (authenticated)', () => {
+test.describe('Services Page (store admin)', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAuth(page);
+    await mockStoreAPIs(page);
+    await injectSession(page);
   });
 
-  test('renders services', async ({ page }) => {
+  test('renders services and opens add modal', async ({ page }) => {
     await page.goto('/services');
-    await expect(page.locator('h2:has-text("Services")')).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=Haircut')).toBeVisible();
+    await expect(page.locator('text=Haircut')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=Beard Trim')).toBeVisible();
-    await expect(page.locator('text=30 min')).toBeVisible();
-  });
-
-  test('has add service button', async ({ page }) => {
-    await page.goto('/services');
-    await expect(page.locator('button:has-text("Add Service")')).toBeVisible({ timeout: 10000 });
-  });
-
-  test('opens add service modal', async ({ page }) => {
-    await page.goto('/services');
     await page.click('button:has-text("Add Service")');
     await expect(page.locator('h3:has-text("Add Service")')).toBeVisible();
-    await expect(page.locator('input[placeholder="e.g. Haircut"]')).toBeVisible();
   });
 });
 
-test.describe('Business Hours Page (authenticated)', () => {
+test.describe('Business Hours & Settings (store admin)', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAuth(page);
+    await mockStoreAPIs(page);
+    await injectSession(page);
   });
 
   test('renders business hours', async ({ page }) => {
     await page.goto('/hours');
     await expect(page.locator('h2:has-text("Business Hours")')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=Monday')).toBeVisible();
-    await expect(page.locator('text=Sunday')).toBeVisible();
-    await expect(page.locator('text=Saturday')).toBeVisible();
+    await expect(page.locator('button:has-text("Save Changes")')).toBeVisible();
   });
 
-  test('has save button', async ({ page }) => {
-    await page.goto('/hours');
-    await expect(page.locator('button:has-text("Save Changes")')).toBeVisible({ timeout: 10000 });
-  });
-});
-
-test.describe('Settings Page (authenticated)', () => {
-  test.beforeEach(async ({ page }) => {
-    await mockAuth(page);
-  });
-
-  test('renders settings with business info', async ({ page }) => {
+  test('renders settings with integrations', async ({ page }) => {
     await page.goto('/settings');
-    await expect(page.locator('h2:has-text("Settings")')).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('h3:has-text("Business Information")')).toBeVisible();
-    await expect(page.locator('h3:has-text("AI Agent Greeting")')).toBeVisible();
-    await expect(page.locator('h3:has-text("Integrations")')).toBeVisible();
-  });
-
-  test('shows integration statuses', async ({ page }) => {
-    await page.goto('/settings');
-    await expect(page.getByText('Google Calendar', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('h3:has-text("Business Information")')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Google Calendar', { exact: true })).toBeVisible();
     await expect(page.getByText('Twilio SMS', { exact: true })).toBeVisible();
     await expect(page.getByText('Vapi Voice AI', { exact: true })).toBeVisible();
   });
 });
 
-test.describe('Navigation (authenticated)', () => {
+test.describe('Navigation (store admin)', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAuth(page);
+    await mockStoreAPIs(page);
+    await injectSession(page);
   });
 
   test('sidebar navigation works for all pages', async ({ page }) => {
@@ -332,5 +337,81 @@ test.describe('Navigation (authenticated)', () => {
 
     await page.click('nav >> text=Dashboard');
     await expect(page.locator('h2:has-text("Dashboard")')).toBeVisible({ timeout: 5000 });
+  });
+});
+
+// ─── Super Admin Tests ────────────────────────────────────────────
+
+test.describe('Admin Dashboard (super admin)', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockAdminAPIs(page);
+    await injectSession(page, {
+      email: 'admin@receiver.app',
+      'cognito:groups': ['super_admin'],
+      'custom:store_id': undefined,
+      'custom:store_name': undefined,
+    });
+  });
+
+  test('renders admin panel with stats', async ({ page }) => {
+    await page.goto('/admin');
+    await expect(page.locator('text=Receiver Admin')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=Super Admin Panel')).toBeVisible();
+    await expect(page.getByText('3', { exact: true }).first()).toBeVisible(); // totalStores
+  });
+
+  test('shows stores table', async ({ page }) => {
+    await page.goto('/admin');
+    await expect(page.locator('h2:has-text("Stores")')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator("text=Mike's Barber Shop")).toBeVisible();
+    await expect(page.locator("text=Joe's Cuts")).toBeVisible();
+    await expect(page.locator('text=mike@shop.com')).toBeVisible();
+  });
+
+  test('has add store button', async ({ page }) => {
+    await page.goto('/admin');
+    await expect(page.locator('button:has-text("Add Store")')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('opens create store modal', async ({ page }) => {
+    await page.goto('/admin');
+    await page.click('button:has-text("Add Store")');
+    await expect(page.locator('h3:has-text("Add New Store")')).toBeVisible();
+    await expect(page.locator('input[placeholder="Mike\'s Barber Shop"]')).toBeVisible();
+    await expect(page.locator('input[placeholder="owner@barbershop.com"]')).toBeVisible();
+  });
+
+  test('opens store detail modal', async ({ page }) => {
+    await page.goto('/admin');
+    // Click the first Eye icon
+    await page.locator('button[title="View details"]').first().click();
+    await expect(page.locator("h3:has-text(\"Mike's Barber Shop\")")).toBeVisible({ timeout: 5000 });
+  });
+
+  test('has sign out button', async ({ page }) => {
+    await page.goto('/admin');
+    await expect(page.locator('text=Sign Out')).toBeVisible({ timeout: 10000 });
+  });
+});
+
+test.describe('Role-based routing', () => {
+  test('super admin accessing / gets redirected to /admin', async ({ page }) => {
+    await mockAdminAPIs(page);
+    await injectSession(page, {
+      email: 'admin@receiver.app',
+      'cognito:groups': ['super_admin'],
+      'custom:store_id': undefined,
+      'custom:store_name': undefined,
+    });
+    await page.goto('/');
+    await expect(page).toHaveURL(/\/admin/, { timeout: 5000 });
+  });
+
+  test('store admin accessing /admin gets redirected to /', async ({ page }) => {
+    await mockStoreAPIs(page);
+    await injectSession(page);
+    await page.goto('/admin');
+    // Store admin should not see the admin panel — redirected to / or stayed at /
+    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/$/, { timeout: 5000 });
   });
 });

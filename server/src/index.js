@@ -2,7 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import db from './db/index.js';
-import { requireAuth } from './middleware/auth.js';
+import { requireAuth, requireSuperAdmin } from './middleware/auth.js';
+import adminRouter from './routes/admin.js';
 import appointmentsRouter from './routes/appointments.js';
 import servicesRouter from './routes/services.js';
 import barbersRouter from './routes/barbers.js';
@@ -26,7 +27,10 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Protected routes (require Cognito JWT)
+// Super admin routes
+app.use('/api/admin', requireSuperAdmin, adminRouter);
+
+// Store admin routes (require Cognito JWT with store_id)
 app.use('/api/appointments', requireAuth, appointmentsRouter);
 app.use('/api/services', requireAuth, servicesRouter);
 app.use('/api/barbers', requireAuth, barbersRouter);

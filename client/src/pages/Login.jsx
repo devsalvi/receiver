@@ -4,13 +4,14 @@ import { useNavigate } from 'react-router-dom'
 import { Phone } from 'lucide-react'
 
 export default function Login() {
-  const { login, register, confirmRegistration } = useAuth()
+  const { login, completeNewPassword } = useAuth()
   const navigate = useNavigate()
-  const [mode, setMode] = useState('login') // login | register | confirm
+  const [mode, setMode] = useState('login') // login | newPassword
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [storeName, setStoreName] = useState('')
-  const [code, setCode] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [cognitoUser, setCognitoUser] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -19,11 +20,12 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
-      await login(email, password)
-      navigate('/')
+      const session = await login(email, password)
+      navigate(session.isSuperAdmin ? '/admin' : '/')
     } catch (err) {
-      if (err.code === 'UserNotConfirmedException') {
-        setMode('confirm')
+      if (err.code === 'NewPasswordRequired') {
+        setCognitoUser(err.cognitoUser)
+        setMode('newPassword')
       } else {
         setError(err.message || 'Login failed')
       }
@@ -32,30 +34,25 @@ export default function Login() {
     }
   }
 
-  const handleRegister = async (e) => {
+  const handleNewPassword = async (e) => {
     e.preventDefault()
     setError('')
-    setLoading(true)
-    try {
-      await register(email, password, storeName)
-      setMode('confirm')
-    } catch (err) {
-      setError(err.message || 'Registration failed')
-    } finally {
-      setLoading(false)
-    }
-  }
 
-  const handleConfirm = async (e) => {
-    e.preventDefault()
-    setError('')
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+    if (newPassword.length < 8) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+
     setLoading(true)
     try {
-      await confirmRegistration(email, code)
-      await login(email, password)
-      navigate('/')
+      const session = await completeNewPassword(cognitoUser, newPassword)
+      navigate(session.isSuperAdmin ? '/admin' : '/')
     } catch (err) {
-      setError(err.message || 'Confirmation failed')
+      setError(err.message || 'Failed to set password')
     } finally {
       setLoading(false)
     }
@@ -80,7 +77,7 @@ export default function Login() {
 
           {mode === 'login' && (
             <form onSubmit={handleLogin} className="space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900">Sign in to your store</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Sign in</h2>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
                 <input type="email" required value={email} onChange={e => setEmail(e.target.value)}
@@ -96,63 +93,27 @@ export default function Login() {
                 className="w-full bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">
                 {loading ? 'Signing in...' : 'Sign In'}
               </button>
-              <p className="text-center text-sm text-gray-500">
-                New store?{' '}
-                <button type="button" onClick={() => { setMode('register'); setError('') }}
-                  className="text-emerald-600 hover:underline font-medium">
-                  Create account
-                </button>
-              </p>
             </form>
           )}
 
-          {mode === 'register' && (
-            <form onSubmit={handleRegister} className="space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900">Create your store</h2>
+          {mode === 'newPassword' && (
+            <form onSubmit={handleNewPassword} className="space-y-4">
+              <h2 className="text-lg font-semibold text-gray-900">Set your new password</h2>
+              <p className="text-sm text-gray-500">Your account was created by an administrator. Please set a new password to continue.</p>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label>
-                <input type="text" required value={storeName} onChange={e => setStoreName(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  placeholder="Mike's Barber Shop" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input type="email" required value={email} onChange={e => setEmail(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <input type="password" required value={password} onChange={e => setPassword(e.target.value)}
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                <input type="password" required value={newPassword} onChange={e => setNewPassword(e.target.value)}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                   placeholder="Min 8 chars, uppercase, lowercase, number" />
               </div>
-              <button type="submit" disabled={loading}
-                className="w-full bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">
-                {loading ? 'Creating...' : 'Create Account'}
-              </button>
-              <p className="text-center text-sm text-gray-500">
-                Already have an account?{' '}
-                <button type="button" onClick={() => { setMode('login'); setError('') }}
-                  className="text-emerald-600 hover:underline font-medium">
-                  Sign in
-                </button>
-              </p>
-            </form>
-          )}
-
-          {mode === 'confirm' && (
-            <form onSubmit={handleConfirm} className="space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900">Verify your email</h2>
-              <p className="text-sm text-gray-500">We sent a verification code to <strong>{email}</strong></p>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Verification Code</label>
-                <input type="text" required value={code} onChange={e => setCode(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  placeholder="123456" maxLength={6} />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                <input type="password" required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
               </div>
               <button type="submit" disabled={loading}
                 className="w-full bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">
-                {loading ? 'Verifying...' : 'Verify & Sign In'}
+                {loading ? 'Setting password...' : 'Set Password & Continue'}
               </button>
             </form>
           )}

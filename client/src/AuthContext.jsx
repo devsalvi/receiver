@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { getCurrentSession, signIn as cognitoSignIn, signOut as cognitoSignOut, signUp as cognitoSignUp, confirmSignUp as cognitoConfirm } from './auth';
+import { getCurrentSession, signIn as cognitoSignIn, signOut as cognitoSignOut, completeNewPassword as cognitoCompleteNewPassword } from './auth';
 
 const AuthContext = createContext(null);
 
@@ -20,21 +20,19 @@ export function AuthProvider({ children }) {
     return session;
   };
 
+  const completeNewPassword = async (cognitoUser, newPassword) => {
+    const session = await cognitoCompleteNewPassword(cognitoUser, newPassword);
+    setUser(session);
+    return session;
+  };
+
   const logout = () => {
     cognitoSignOut();
     setUser(null);
   };
 
-  const register = async (email, password, storeName) => {
-    return cognitoSignUp(email, password, storeName);
-  };
-
-  const confirmRegistration = async (email, code) => {
-    return cognitoConfirm(email, code);
-  };
-
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, register, confirmRegistration }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, completeNewPassword }}>
       {children}
     </AuthContext.Provider>
   );

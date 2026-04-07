@@ -10,6 +10,7 @@
     "db:init": "node src/db/init.js"
   },
   "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1025.0",
     "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

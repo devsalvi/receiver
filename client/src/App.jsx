@@ -2,6 +2,7 @@ import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { LayoutDashboard, Calendar, Phone, Scissors, Clock, Settings, LogOut } from 'lucide-react'
 import { AuthProvider, useAuth } from './AuthContext'
 import Login from './pages/Login'
+import AdminDashboard from './pages/AdminDashboard'
 import Dashboard from './pages/Dashboard'
 import Appointments from './pages/Appointments'
 import CallLog from './pages/CallLog'
@@ -25,12 +26,27 @@ function ProtectedRoute({ children }) {
   return children
 }
 
-function AppShell() {
+function StoreAdminRoute({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="flex items-center justify-center h-screen text-gray-400">Loading...</div>
+  if (!user) return <Navigate to="/login" replace />
+  if (user.isSuperAdmin) return <Navigate to="/admin" replace />
+  return children
+}
+
+function SuperAdminRoute({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="flex items-center justify-center h-screen text-gray-400">Loading...</div>
+  if (!user) return <Navigate to="/login" replace />
+  if (!user.isSuperAdmin) return <Navigate to="/" replace />
+  return children
+}
+
+function StoreShell() {
   const { user, logout } = useAuth()
 
   return (
     <div className="flex h-screen bg-gray-50">
-      {/* Sidebar */}
       <aside className="w-64 bg-gray-900 text-white flex flex-col">
         <div className="p-6">
           <h1 className="text-xl font-bold flex items-center gap-2">
@@ -74,7 +90,6 @@ function AppShell() {
         </div>
       </aside>
 
-      {/* Main content */}
       <main className="flex-1 overflow-auto">
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -94,10 +109,15 @@ function App() {
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/admin" element={
+          <SuperAdminRoute>
+            <AdminDashboard />
+          </SuperAdminRoute>
+        } />
         <Route path="/*" element={
-          <ProtectedRoute>
-            <AppShell />
-          </ProtectedRoute>
+          <StoreAdminRoute>
+            <StoreShell />
+          </StoreAdminRoute>
         } />
       </Routes>
     </AuthProvider>
