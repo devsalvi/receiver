@@ -1,6 +1,7 @@
 -- Stores (tenants)
 CREATE TABLE IF NOT EXISTS stores (
   id TEXT PRIMARY KEY,
+  slug TEXT UNIQUE,
   name TEXT NOT NULL DEFAULT 'My Barber Shop',
   owner_email TEXT NOT NULL,
   phone TEXT,

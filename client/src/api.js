@@ -73,6 +73,15 @@ export const api = {
   // Auth
   getGoogleStatus: () => request('/auth/google/status'),
 
+  // Public store pages
+  public: {
+    getStore: (slug) => request(`/public/store/${slug}`),
+    getAvailability: (slug, date, barberId) => {
+      const qs = barberId ? `?barber_id=${barberId}` : '';
+      return request(`/public/store/${slug}/availability/${date}${qs}`);
+    },
+  },
+
   // Admin
   admin: {
     getStats: () => request('/admin/stats'),

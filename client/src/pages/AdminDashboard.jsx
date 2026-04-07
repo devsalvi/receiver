@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
-import { Plus, Store, Trash2, X, Phone, LogOut, Eye } from 'lucide-react'
+import { Plus, Store, Trash2, X, Phone, LogOut, Eye, Copy, ExternalLink } from 'lucide-react'
 
 export default function AdminDashboard() {
   const { logout } = useAuth()
@@ -78,6 +78,7 @@ export default function AdminDashboard() {
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left text-xs font-medium text-gray-500 px-5 py-3">Store</th>
+                <th className="text-left text-xs font-medium text-gray-500 px-5 py-3">Store URL</th>
                 <th className="text-left text-xs font-medium text-gray-500 px-5 py-3">Admin Email</th>
                 <th className="text-left text-xs font-medium text-gray-500 px-5 py-3">Appointments</th>
                 <th className="text-left text-xs font-medium text-gray-500 px-5 py-3">Customers</th>
@@ -88,10 +89,10 @@ export default function AdminDashboard() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading && (
-                <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-400">Loading...</td></tr>
+                <tr><td colSpan={8} className="px-5 py-8 text-center text-gray-400">Loading...</td></tr>
               )}
               {!loading && stores.length === 0 && (
-                <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-400">No stores yet. Click "Add Store" to create one.</td></tr>
+                <tr><td colSpan={8} className="px-5 py-8 text-center text-gray-400">No stores yet. Click "Add Store" to create one.</td></tr>
               )}
               {stores.map(store => (
                 <tr key={store.id} className="hover:bg-gray-50">
@@ -100,6 +101,26 @@ export default function AdminDashboard() {
                       <Store className="w-4 h-4 text-gray-400" />
                       <span className="text-sm font-medium text-gray-900">{store.name}</span>
                     </div>
+                  </td>
+                  <td className="px-5 py-3">
+                    {store.slug ? (
+                      <div className="flex items-center gap-1">
+                        <a href={`/store/${store.slug}`} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-emerald-600 hover:underline truncate max-w-[140px]">
+                          /store/{store.slug}
+                        </a>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${window.location.origin}/store/${store.slug}`)
+                          }}
+                          className="text-gray-400 hover:text-gray-600" title="Copy URL"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-sm text-gray-600">{store.owner_email}</td>
                   <td className="px-5 py-3 text-sm text-gray-600">{store.appointment_count}</td>
@@ -219,6 +240,19 @@ function StoreDetailModal({ store, onClose }) {
                   <p><span className="text-gray-500">Phone:</span> {detail.phone || 'Not set'}</p>
                   <p><span className="text-gray-500">Address:</span> {detail.address || 'Not set'}</p>
                   <p><span className="text-gray-500">Timezone:</span> {detail.timezone}</p>
+                  {detail.slug && (
+                    <p className="flex items-center gap-2">
+                      <span className="text-gray-500">Store URL:</span>
+                      <a href={`/store/${detail.slug}`} target="_blank" rel="noopener noreferrer"
+                        className="text-emerald-600 hover:underline flex items-center gap-1">
+                        {window.location.origin}/store/{detail.slug} <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/store/${detail.slug}`)}
+                        className="text-gray-400 hover:text-gray-600" title="Copy URL">
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    </p>
+                  )}
                 </div>
               </div>
               <div>

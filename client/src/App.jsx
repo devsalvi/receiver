@@ -9,6 +9,7 @@ import CallLog from './pages/CallLog'
 import Services from './pages/Services'
 import BusinessHours from './pages/BusinessHours'
 import SettingsPage from './pages/Settings'
+import StorePage from './pages/StorePage'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -109,6 +110,7 @@ function App() {
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/store/:slug" element={<StorePage />} />
         <Route path="/admin" element={
           <SuperAdminRoute>
             <AdminDashboard />
