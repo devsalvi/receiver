@@ -21,6 +21,7 @@ app.use(cors({
     process.env.APP_URL || 'http://localhost:5173',
     'http://localhost:5173',
     'https://master.d1jxovvwswacpk.amplifyapp.com',
+    'https://ar8nn37487.execute-api.us-east-1.amazonaws.com',
   ],
   credentials: true,
 }));
