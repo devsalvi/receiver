@@ -120,11 +120,11 @@ export default function SettingsPage() {
 
         <div className="flex items-center justify-between py-3">
           <div>
-            <p className="text-sm font-medium text-gray-900">Vapi Voice AI</p>
-            <p className="text-xs text-gray-500">Inbound call handling</p>
+            <p className="text-sm font-medium text-gray-900">ElevenLabs Voice AI</p>
+            <p className="text-xs text-gray-500">AI voice agent for inbound call handling</p>
           </div>
-          <span className="text-xs px-2 py-1 bg-gray-100 text-gray-500 rounded-full">
-            Configure in .env
+          <span className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full">
+            Active
           </span>
         </div>
       </div>

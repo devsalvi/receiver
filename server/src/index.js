@@ -10,6 +10,7 @@ import barbersRouter from './routes/barbers.js';
 import businessRouter from './routes/business.js';
 import callsRouter from './routes/calls.js';
 import vapiRouter from './routes/vapi.js';
+import elevenlabsRouter from './routes/elevenlabs.js';
 import authRouter from './routes/auth.js';
 import publicRouter from './routes/public.js';
 import { startReminderScheduler } from './services/reminders.js';
@@ -31,6 +32,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Public routes (no auth required)
 app.use('/api/vapi', vapiRouter);
+app.use('/api/elevenlabs', elevenlabsRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/public', publicRouter);
 app.get('/api/health', (req, res) => {

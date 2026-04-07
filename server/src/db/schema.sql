@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS stores (
   address TEXT,
   timezone TEXT NOT NULL DEFAULT 'America/New_York',
   greeting_message TEXT DEFAULT 'Hi, this is {shop_name}. I''m an AI assistant — I can book your appointment.',
+  elevenlabs_agent_id TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

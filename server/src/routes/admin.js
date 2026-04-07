@@ -11,6 +11,7 @@ import {
 } from '@aws-sdk/client-cognito-identity-provider';
 import db from '../db/index.js';
 import { provisionStore } from '../db/store.js';
+import { createAgent, deleteAgent } from '../services/elevenlabs.js';
 
 const router = Router();
 
@@ -79,10 +80,27 @@ router.post('/stores', async (req, res) => {
     // Provision the store in the database
     provisionStore(storeId, store_name, admin_email);
 
+    // Create ElevenLabs voice agent for this store
+    let agentId = null;
+    try {
+      const webhookBaseUrl = process.env.ELEVENLABS_WEBHOOK_URL || `http://32.194.173.32`;
+      const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(storeId);
+      const services = db.prepare('SELECT * FROM services WHERE store_id = ? AND active = 1').all(storeId);
+      const barbers = db.prepare('SELECT * FROM barbers WHERE store_id = ? AND active = 1').all(storeId);
+
+      const agent = await createAgent(store, services, barbers, webhookBaseUrl);
+      agentId = agent.agent_id;
+      db.prepare('UPDATE stores SET elevenlabs_agent_id = ? WHERE id = ?').run(agentId, storeId);
+      console.log(`ElevenLabs agent created for store ${storeId}: ${agentId}`);
+    } catch (err) {
+      console.error('ElevenLabs agent creation failed (store still created):', err.message);
+    }
+
     res.status(201).json({
       store_id: storeId,
       store_name,
       admin_email,
+      elevenlabs_agent_id: agentId,
       message: `Store created. Admin can log in with email: ${admin_email} and the temporary password. They will be prompted to change it on first login.`,
     });
   } catch (err) {
@@ -100,6 +118,15 @@ router.post('/stores', async (req, res) => {
 router.delete('/stores/:id', async (req, res) => {
   const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(req.params.id);
   if (!store) return res.status(404).json({ error: 'Store not found' });
+
+  // Delete ElevenLabs agent
+  if (store.elevenlabs_agent_id) {
+    try {
+      await deleteAgent(store.elevenlabs_agent_id);
+    } catch (err) {
+      console.error('Failed to delete ElevenLabs agent:', err.message);
+    }
+  }
 
   // Delete Cognito user
   try {
